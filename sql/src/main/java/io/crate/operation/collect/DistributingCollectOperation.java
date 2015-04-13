@@ -31,7 +31,6 @@ import io.crate.executor.transport.distributed.DistributingDownstream;
 import io.crate.jobs.JobContextService;
 import io.crate.metadata.Functions;
 import io.crate.metadata.ReferenceResolver;
-import io.crate.planner.node.PlanNode;
 import io.crate.planner.node.StreamerVisitor;
 import io.crate.planner.node.dql.CollectNode;
 import org.elasticsearch.cluster.ClusterService;
@@ -55,8 +54,8 @@ import java.util.List;
 @Singleton
 public class DistributingCollectOperation extends MapSideDataCollectOperation<DistributingDownstream> {
 
-    private final TransportService transportService;
     private final CircuitBreaker circuitBreaker;
+    private final TransportService transportService;
 
     @Inject
     public DistributingCollectOperation(ClusterService clusterService,
@@ -95,9 +94,10 @@ public class DistributingCollectOperation extends MapSideDataCollectOperation<Di
     public DistributingDownstream createDownstream(CollectNode node) {
         assert node.jobId().isPresent();
         Streamer<?>[] streamers = streamerVisitor.processPlanNode(
-                (PlanNode) node, new RamAccountingContext("dummy", circuitBreaker)).outputStreamers();
+                node, new RamAccountingContext("dummy", circuitBreaker)).outputStreamers();
         return new DistributingDownstream(
                 node.jobId().get(),
+                node.executionNodeId(),
                 toDiscoveryNodes(node.downstreamNodes()),
                 transportService,
                 streamers

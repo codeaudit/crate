@@ -54,22 +54,23 @@ public class DistributingDownstream extends AbstractFuture<Void>
 
     private final UUID jobId;
     private final MultiBucketBuilder bucketBuilder;
-    private final TransportService transportService;
     private final DistributedResultRequest[] requests;
     private List<DiscoveryNode> downstreams;
+    private final TransportService transportService;
 
 
     public DistributingDownstream(UUID jobId,
+                                  int executionNodeId,
                                   List<DiscoveryNode> downstreams,
                                   TransportService transportService,
                                   Streamer<?>[] streamers) {
         this.downstreams = downstreams;
+        this.transportService = transportService;
         this.bucketBuilder = new MultiBucketBuilder(streamers, downstreams.size());
         this.jobId = jobId;
-        this.transportService = transportService;
         this.requests = new DistributedResultRequest[downstreams.size()];
         for (int i = 0, length = downstreams.size(); i < length; i++) {
-            this.requests[i] = new DistributedResultRequest(jobId, streamers);
+            this.requests[i] = new DistributedResultRequest(jobId, executionNodeId, i, streamers);
         }
     }
 
@@ -117,7 +118,7 @@ public class DistributingDownstream extends AbstractFuture<Void>
     }
 
     private void sendRequest(final DistributedResultRequest request, final DiscoveryNode node) {
-        transportService.submitRequest(
+        transportService.sendRequest(
                 node,
                 TransportDistributedResultAction.DISTRIBUTED_RESULT_ACTION,
                 request,
