@@ -25,7 +25,7 @@ import com.google.common.util.concurrent.AbstractFuture;
 import io.crate.Streamer;
 import io.crate.core.collections.Bucket;
 import io.crate.core.collections.Row;
-import io.crate.executor.transport.merge.TransportMergeNodeAction;
+import io.crate.executor.transport.merge.TransportDistributedResultAction;
 import io.crate.operation.RowDownstream;
 import io.crate.operation.RowDownstreamHandle;
 import io.crate.operation.RowUpstream;
@@ -119,7 +119,7 @@ public class DistributingDownstream extends AbstractFuture<Void>
     private void sendRequest(final DistributedResultRequest request, final DiscoveryNode node) {
         transportService.submitRequest(
                 node,
-                TransportMergeNodeAction.mergeRowsAction,
+                TransportDistributedResultAction.DISTRIBUTED_RESULT_ACTION,
                 request,
                 new BaseTransportResponseHandler<DistributedResultResponse>() {
                     @Override
@@ -159,7 +159,7 @@ public class DistributingDownstream extends AbstractFuture<Void>
     private void sendFailure(UUID contextId, final DiscoveryNode node) {
         transportService.submitRequest(
                 node,
-                TransportMergeNodeAction.failAction,
+                TransportDistributedResultAction.failAction,
                 new DistributedFailureRequest(contextId),
                 new BaseTransportResponseHandler<DistributedResultResponse>() {
                     @Override
