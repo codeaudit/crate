@@ -34,6 +34,7 @@ import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsReques
 import org.elasticsearch.common.collect.MapBuilder;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
+import org.elasticsearch.test.junit.annotations.TestLogging;
 import org.hamcrest.Matchers;
 import org.junit.Rule;
 import org.junit.Test;
@@ -1003,6 +1004,7 @@ public class TransportSQLActionTest extends SQLTransportIntegrationTest {
     }
 
     @Test
+    @TestLogging("io.crate.executor.transport:TRACE,io.crate.operation.merge:TRACE")
     public void selectNonExistingColumn() throws Exception {
         nonExistingColumnSetup();
         execute("select o['notExisting'] from quotes");

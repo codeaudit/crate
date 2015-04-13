@@ -26,6 +26,7 @@ import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.hamcrest.collection.IsIterableContainingInOrder;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.*;
@@ -36,6 +37,7 @@ import static org.hamcrest.core.Is.is;
 @CrateIntegrationTest.ClusterScope(scope = CrateIntegrationTest.Scope.GLOBAL)
 public class DistributedMergeTaskTest extends SQLTransportIntegrationTest {
 
+    @Ignore
     @Test
     public void testDistributedMergeTask() throws Exception {
         ClusterService clusterService = cluster().getInstance(ClusterService.class);

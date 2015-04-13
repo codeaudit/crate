@@ -45,6 +45,8 @@ import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.transport.TransportService;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -95,9 +97,17 @@ public class DistributingCollectOperation extends MapSideDataCollectOperation<Di
         assert node.jobId().isPresent();
         Streamer<?>[] streamers = streamerVisitor.processPlanNode(
                 node, new RamAccountingContext("dummy", circuitBreaker)).outputStreamers();
+
+
+        // TODO: set bucketIdx properly
+        ArrayList<String> strings = Lists.newArrayList(node.executionNodes());
+        Collections.sort(strings);
+        int bucketIdx = strings.indexOf(clusterService.localNode().id());
+
         return new DistributingDownstream(
                 node.jobId().get(),
-                node.executionNodeId(),
+                node.downstreamExecutionNodeId(),
+                bucketIdx,
                 toDiscoveryNodes(node.downstreamNodes()),
                 transportService,
                 streamers

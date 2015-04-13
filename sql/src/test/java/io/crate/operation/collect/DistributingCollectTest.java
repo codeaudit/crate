@@ -96,6 +96,7 @@ import org.elasticsearch.transport.TransportResponseHandler;
 import org.elasticsearch.transport.TransportService;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Matchers;
@@ -301,6 +302,7 @@ public class DistributingCollectTest extends CrateUnitTest {
     }
 
 
+    @Ignore
     @Test
     public void testCollectFromShardsToBuckets() throws Exception {
         final Map<String, Bucket> buckets = new HashMap<>();

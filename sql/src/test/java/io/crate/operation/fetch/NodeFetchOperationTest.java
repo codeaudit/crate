@@ -27,6 +27,7 @@ import io.crate.breaker.RamAccountingContext;
 import io.crate.executor.transport.distributed.SingleBucketBuilder;
 import io.crate.metadata.Functions;
 import io.crate.jobs.JobContextService;
+import io.crate.operation.PageDownstreamFactory;
 import io.crate.planner.symbol.Reference;
 import io.crate.test.integration.CrateUnitTest;
 import org.elasticsearch.common.settings.ImmutableSettings;
@@ -54,7 +55,7 @@ public class NodeFetchOperationTest extends CrateUnitTest {
         when(threadPoolExecutor.getPoolSize()).thenReturn(2);
         threadPool = mock(ThreadPool.class);
         when(threadPool.executor(any(String.class))).thenReturn(threadPoolExecutor);
-        jobContextService = new JobContextService(ImmutableSettings.EMPTY, threadPool);
+        jobContextService = new JobContextService(ImmutableSettings.EMPTY, threadPool, mock(PageDownstreamFactory.class));
     }
 
     @AfterClass

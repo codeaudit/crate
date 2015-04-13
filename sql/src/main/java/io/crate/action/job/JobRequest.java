@@ -30,7 +30,6 @@ import org.elasticsearch.transport.TransportRequest;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 import java.util.UUID;
 
 public class JobRequest extends TransportRequest {
@@ -38,18 +37,13 @@ public class JobRequest extends TransportRequest {
     public static final int NO_DIRECT_RETURN = -1;
 
     private UUID jobId;
-    private List<ExecutionNode> executionNodes;
+    private Collection<? extends ExecutionNode> executionNodes;
     private int returnResultFromNode = NO_DIRECT_RETURN;
 
     protected JobRequest() {
     }
 
-    public JobRequest(UUID jobId, List<ExecutionNode> executionNodes) {
-        this.jobId = jobId;
-        this.executionNodes = executionNodes;
-    }
-
-    public JobRequest(UUID jobId, List<ExecutionNode> executionNodes, int returnResultFromNode) {
+    public JobRequest(UUID jobId, Collection<? extends ExecutionNode> executionNodes, int returnResultFromNode) {
         assert returnResultFromNode < executionNodes.size() : "invalid returnResultFromNode index";
         this.jobId = jobId;
         this.executionNodes = executionNodes;
@@ -60,7 +54,7 @@ public class JobRequest extends TransportRequest {
         return jobId;
     }
 
-    public Collection<ExecutionNode> executionNodes() {
+    public Collection<? extends ExecutionNode> executionNodes() {
         return this.executionNodes;
     }
 
@@ -79,11 +73,12 @@ public class JobRequest extends TransportRequest {
         jobId = new UUID(in.readLong(), in.readLong());
 
         int numExecutionNodes = in.readVInt();
-        executionNodes = new ArrayList<>(numExecutionNodes);
+        ArrayList<ExecutionNode> executionNodes = new ArrayList<>(numExecutionNodes);
         for (int i = 0; i < numExecutionNodes; i++) {
             ExecutionNode node = ExecutionNodes.fromStream(in);
             executionNodes.add(node);
         }
+        this.executionNodes = executionNodes;
         returnResultFromNode = in.readInt();
     }
 

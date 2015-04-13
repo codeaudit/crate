@@ -88,7 +88,11 @@ public class MapSideCollectOperationDispatcher {
                         directResultFuture.setException(t);
                     }
                 });
-                distributingCollectOperation.collect(collectNode, downstream, ramAccountingContext);
+                try {
+                    distributingCollectOperation.collect(collectNode, downstream, ramAccountingContext);
+                } catch (Throwable t) {
+                    downstream.fail(t);
+                }
             } else {
                 SingleBucketBuilder downstream = nonDistributingCollectOperation.createDownstream(collectNode);
                 Futures.addCallback(downstream.result(), new FutureCallback<Bucket>() {
@@ -112,7 +116,11 @@ public class MapSideCollectOperationDispatcher {
                         directResultFuture.setException(t);
                     }
                 });
-                nonDistributingCollectOperation.collect(collectNode, downstream, ramAccountingContext);
+                try {
+                    nonDistributingCollectOperation.collect(collectNode, downstream, ramAccountingContext);
+                } catch (Throwable t) {
+                    downstream.fail(t);
+                }
             }
         } catch (Throwable e) {
             LOGGER.error("Error executing collect operation [{}]", e, collectNode);

@@ -21,12 +21,16 @@
 
 package io.crate.jobs;
 
+import io.crate.operation.PageDownstreamFactory;
 import io.crate.test.integration.CrateUnitTest;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
 import java.lang.reflect.Field;
 import java.util.Map;
@@ -40,10 +44,20 @@ import static org.hamcrest.Matchers.is;
 
 public class JobContextServiceTest extends CrateUnitTest {
 
+    @Mock
+    public PageDownstreamFactory pageDownstreamFactory;
+
     private final ThreadPool testThreadPool = new ThreadPool(getClass().getSimpleName());
     private final Settings settings = ImmutableSettings.EMPTY;
+    private final JobContextService jobContextService = new JobContextService(
+            settings, testThreadPool, pageDownstreamFactory);
 
-    private final JobContextService jobContextService = new JobContextService(settings, testThreadPool);
+    @Override
+    @Before
+    public void setUp() throws Exception {
+        super.setUp();
+        MockitoAnnotations.initMocks(this);
+    }
 
     @After
     public void cleanUp() throws Exception {
@@ -88,7 +102,7 @@ public class JobContextServiceTest extends CrateUnitTest {
     public void testKeepAliveExpiration() throws Exception {
         JobContextService.DEFAULT_KEEP_ALIVE_INTERVAL = timeValueMillis(1);
         JobContextService.DEFAULT_KEEP_ALIVE = timeValueMillis(0).millis();
-        JobContextService jobContextService1 = new JobContextService(settings, testThreadPool);
+        JobContextService jobContextService1 = new JobContextService(settings, testThreadPool, pageDownstreamFactory);
         JobExecutionContext ctx1 = jobContextService1.getOrCreateContext(UUID.randomUUID());
         jobContextService1.releaseContext(ctx1.id());
         Field activeContexts = JobContextService.class.getDeclaredField("activeContexts");

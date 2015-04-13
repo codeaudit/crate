@@ -61,6 +61,7 @@ public class DistributingDownstream extends AbstractFuture<Void>
 
     public DistributingDownstream(UUID jobId,
                                   int executionNodeId,
+                                  int bucketIdx,
                                   List<DiscoveryNode> downstreams,
                                   TransportService transportService,
                                   Streamer<?>[] streamers) {
@@ -70,7 +71,7 @@ public class DistributingDownstream extends AbstractFuture<Void>
         this.jobId = jobId;
         this.requests = new DistributedResultRequest[downstreams.size()];
         for (int i = 0, length = downstreams.size(); i < length; i++) {
-            this.requests[i] = new DistributedResultRequest(jobId, executionNodeId, i, streamers);
+            this.requests[i] = new DistributedResultRequest(jobId, executionNodeId, bucketIdx, streamers);
         }
     }
 
@@ -88,7 +89,7 @@ public class DistributingDownstream extends AbstractFuture<Void>
     protected void onAllUpstreamsFinished() {
         Throwable throwable = lastException.get();
         if (throwable != null) {
-            forwardFailures();
+            forwardFailures(throwable);
             setException(throwable);
             return;
         }
@@ -108,10 +109,10 @@ public class DistributingDownstream extends AbstractFuture<Void>
         super.set(null);
     }
 
-    private void forwardFailures() {
+    private void forwardFailures(Throwable throwable) {
         int idx = 0;
         for (DistributedResultRequest request : requests) {
-            request.failure(true);
+            request.throwable(throwable);
             sendRequest(request, downstreams.get(idx));
             idx++;
         }
@@ -130,6 +131,7 @@ public class DistributingDownstream extends AbstractFuture<Void>
 
                     @Override
                     public void handleResponse(DistributedResultResponse response) {
+                        // TODO: handle response.needMore()
                         if (logger.isTraceEnabled()) {
                             logger.trace("[{}] successfully sent distributing collect request to {}",
                                     jobId.toString(),
@@ -141,7 +143,7 @@ public class DistributingDownstream extends AbstractFuture<Void>
                     public void handleException(TransportException exp) {
                         Throwable cause = exp.getCause();
                         if (cause instanceof EsRejectedExecutionException) {
-                            sendFailure(request.contextId(), node);
+                            sendFailure(request.jobId(), node);
                         } else {
                             logger.error("[{}] Exception sending distributing collect request to {}",
                                     exp, jobId, node.id());

@@ -21,6 +21,7 @@
 
 package io.crate.jobs;
 
+import io.crate.operation.PageDownstreamFactory;
 import io.crate.operation.collect.JobCollectContext;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
@@ -46,14 +47,18 @@ public class JobContextService extends AbstractLifecycleComponent<JobContextServ
     protected static TimeValue DEFAULT_KEEP_ALIVE_INTERVAL = timeValueMinutes(1);
 
     private final ThreadPool threadPool;
+    private final PageDownstreamFactory pageDownstreamFactory;
     private final ScheduledFuture<?> keepAliveReaper;
     private final ConcurrentMap<UUID, JobExecutionContext> activeContexts =
             ConcurrentCollections.newConcurrentMapWithAggressiveConcurrency();
 
     @Inject
-    public JobContextService(Settings settings, ThreadPool threadPool) {
+    public JobContextService(Settings settings,
+                             ThreadPool threadPool,
+                             PageDownstreamFactory pageDownstreamFactory) {
         super(settings);
         this.threadPool = threadPool;
+        this.pageDownstreamFactory = pageDownstreamFactory;
         this.keepAliveReaper = threadPool.scheduleWithFixedDelay(
                 new Reaper(),
                 DEFAULT_KEEP_ALIVE_INTERVAL);
@@ -135,6 +140,11 @@ public class JobContextService extends AbstractLifecycleComponent<JobContextServ
 
     protected void contextProcessedSuccessfully(JobExecutionContext context) {
         context.accessed(threadPool.estimatedTimeInMillis());
+    }
+
+    public void initializeFinalMerge(UUID jobId, int executionNodeId, PageDownstreamContext pageDownstreamContext) {
+        JobExecutionContext jobExecutionContext = getOrCreateContext(jobId);
+        jobExecutionContext.setPageDownstreamContext(executionNodeId, pageDownstreamContext);
     }
 
     class Reaper implements Runnable {

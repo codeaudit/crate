@@ -29,6 +29,7 @@ import io.crate.analyze.OrderBy;
 import io.crate.analyze.WhereClause;
 import io.crate.metadata.Routing;
 import io.crate.planner.RowGranularity;
+import io.crate.planner.node.ExecutionNode;
 import io.crate.planner.node.ExecutionNodeVisitor;
 import io.crate.planner.node.PlanNodeVisitor;
 import io.crate.planner.projection.Projection;
@@ -59,8 +60,12 @@ public class CollectNode extends AbstractDQLPlanNode {
     private List<Symbol> toCollect;
     private WhereClause whereClause = WhereClause.MATCH_ALL;
     private RowGranularity maxRowGranularity = RowGranularity.CLUSTER;
+
     @Nullable
     private List<String> downstreamNodes;
+
+    private int downstreamExecutionNodeId = ExecutionNode.NO_EXECUTION_NODE;
+
     private boolean isPartitioned = false;
     private boolean keepContextForFetcher = false;
 
@@ -138,6 +143,14 @@ public class CollectNode extends AbstractDQLPlanNode {
         this.downstreamNodes = downStreamNodes;
     }
 
+    public void downstreamExecutionNodeId(int executionNodeId) {
+        this.downstreamExecutionNodeId = executionNodeId;
+    }
+
+    public int downstreamExecutionNodeId() {
+        return downstreamExecutionNodeId;
+    }
+
     public WhereClause whereClause() {
         return whereClause;
     }
@@ -169,7 +182,6 @@ public class CollectNode extends AbstractDQLPlanNode {
      * Only used on {@link io.crate.operation.collect.HandlerSideDataCollectOperation},
      * so no serialization is needed.
      *
-     * @return
      */
     public boolean isPartitioned() {
         return isPartitioned;
@@ -210,6 +222,7 @@ public class CollectNode extends AbstractDQLPlanNode {
     @Override
     public void readFrom(StreamInput in) throws IOException {
         super.readFrom(in);
+        downstreamExecutionNodeId = in.readVInt();
 
         int numCols = in.readVInt();
         if (numCols > 0) {
@@ -253,6 +266,7 @@ public class CollectNode extends AbstractDQLPlanNode {
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
+        out.writeVInt(downstreamExecutionNodeId);
 
         int numCols = toCollect.size();
         out.writeVInt(numCols);
