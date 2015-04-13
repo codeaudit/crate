@@ -97,6 +97,8 @@ public class LuceneDocCollectorBenchmark extends BenchmarkBase {
     public static final int BENCHMARK_ROUNDS = 100;
     public static final int WARMUP_ROUNDS = 10;
 
+    public static final int PAGE_SIZE = 99_999;
+
     public final static ESLogger logger = Loggers.getLogger(LuceneDocCollectorBenchmark.class);
 
     private ShardId shardId = new ShardId(INDEX_NAME, 0);
@@ -196,6 +198,7 @@ public class LuceneDocCollectorBenchmark extends BenchmarkBase {
         JobCollectContext jobCollectContext = collectContextService.acquireContext(node.jobId().get());
         jobCollectContext.registerJobContextId(shardId, jobSearchContextId);
         LuceneDocCollector collector = (LuceneDocCollector)shardCollectService.getCollector(node, projectorChain, jobCollectContext, 0);
+        collector.pageSize(PAGE_SIZE);
         return collector;
     }
 
