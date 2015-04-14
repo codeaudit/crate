@@ -25,22 +25,39 @@ import io.crate.Constants;
 import io.crate.action.sql.query.CrateSearchContext;
 import io.crate.action.sql.query.CrateSearchService;
 import io.crate.analyze.OrderBy;
+import io.crate.analyze.WhereClause;
 import io.crate.breaker.CrateCircuitBreakerService;
 import io.crate.breaker.RamAccountingContext;
+import io.crate.lucene.LuceneQueryBuilder;
+import io.crate.lucene.QueryBuilderHelper;
+import io.crate.metadata.FunctionIdent;
+import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.Functions;
 import io.crate.operation.*;
+import io.crate.operation.operator.GteOperator;
+import io.crate.operation.operator.LteOperator;
 import io.crate.operation.reference.doc.lucene.CollectorContext;
 import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
 import io.crate.operation.reference.doc.lucene.LuceneDocLevelReferenceResolver;
 import io.crate.operation.reference.doc.lucene.OrderByCollectorExpression;
 import io.crate.planner.node.dql.CollectNode;
+import io.crate.planner.symbol.Function;
+import io.crate.planner.symbol.Literal;
+import io.crate.planner.symbol.Reference;
+import io.crate.planner.symbol.Symbol;
+import io.crate.types.DataType;
 import org.apache.lucene.index.*;
 import org.apache.lucene.search.*;
+import org.elasticsearch.common.logging.ESLogger;
+import org.elasticsearch.common.logging.Loggers;
+import org.elasticsearch.common.lucene.search.NotFilter;
+import org.elasticsearch.common.lucene.search.Queries;
 import org.elasticsearch.index.fieldvisitor.FieldsVisitor;
 import org.elasticsearch.index.mapper.internal.SourceFieldMapper;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 
@@ -48,6 +65,8 @@ import java.util.List;
  * collect documents from ES shard, a lucene index
  */
 public class LuceneDocCollector extends Collector implements CrateCollector, RowUpstream {
+
+    private static ESLogger logger = Loggers.getLogger(LuceneDocCollector.class);
 
     public static class CollectorFieldsVisitor extends FieldsVisitor {
 
@@ -102,6 +121,11 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
     private int rowCount = 0;
     private int pageSize;
 
+    private final Functions functions;
+    private final LuceneQueryBuilder queryBuilder;
+
+    private AtomicReaderContext readerContext;
+
     public LuceneDocCollector(List<Input<?>> inputs,
                               List<LuceneCollectorExpression<?>> collectorExpressions,
                               CollectNode collectNode,
@@ -110,7 +134,8 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
                               JobCollectContext jobCollectContext,
                               CrateSearchContext searchContext,
                               int jobSearchContextId,
-                              boolean keepContextForFetcher) throws Exception {
+                              boolean keepContextForFetcher,
+                              LuceneQueryBuilder queryBuilder) throws Exception {
         this.limit = collectNode.limit();
         this.orderBy = collectNode.orderBy();
         this.downstream = downStreamProjector.registerUpstream(this);
@@ -128,6 +153,8 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
         this.keepContextForFetcher = keepContextForFetcher;
         inputSymbolVisitor = new CollectInputSymbolVisitor<>(functions, new LuceneDocLevelReferenceResolver(null));
         this.pageSize = Constants.PAGE_SIZE;
+        this.functions = functions;
+        this.queryBuilder = queryBuilder;
     }
 
     @Override
@@ -158,6 +185,7 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
             fieldsVisitor.reset();
             currentReader.document(doc, fieldsVisitor);
         }
+        //logger.info("DOC ID "+ (doc + readerContext.docBase));
         for (LuceneCollectorExpression e : collectorExpressions) {
             e.setNextDocId(doc);
         }
@@ -170,6 +198,7 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
 
     @Override
     public void setNextReader(AtomicReaderContext context) throws IOException {
+        //readerContext = context;
         this.currentReader = context.reader();
         for (LuceneCollectorExpression expr : collectorExpressions) {
             expr.setNextReader(context);
@@ -211,12 +240,48 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
             if( orderBy != null) {
                 Integer batchSize = limit == null ? pageSize : Math.min(pageSize, limit);
                 Sort sort = CrateSearchService.generateLuceneSort(searchContext, orderBy, inputSymbolVisitor);
+
                 TopFieldDocs topFieldDocs = searchContext.searcher().search(query, batchSize, sort);
                 int collected = topFieldDocs.scoreDocs.length;
                 ScoreDoc lastCollected = collectTopFields(topFieldDocs);
+
+
                 while ((limit == null || collected < limit) && topFieldDocs.scoreDocs.length >= batchSize && lastCollected != null) {
                     batchSize = limit == null ? pageSize : Math.min(pageSize, limit - collected);
-                    topFieldDocs = (TopFieldDocs)searchContext.searcher().searchAfter(lastCollected, query, batchSize, sort);
+                    BooleanQuery searchAfter = new BooleanQuery();
+                    searchAfter.add(query, BooleanClause.Occur.MUST);
+
+                    int i = 0;
+                    for (Symbol order : orderBy.orderBySymbols()) {
+                        List<DataType> dataTypes = Arrays.asList(order.valueType(), order.valueType());
+                        Object value = ((FieldDoc)lastCollected).fields[i];
+                        List<Symbol> arguments = Arrays.asList(order, Literal.newLiteral(order.valueType(), order.valueType().value(value)));
+
+                        String operator = GteOperator.NAME;
+                        if (orderBy.reverseFlags()[i]) {
+                            operator = LteOperator.NAME;
+                        }
+                        Function function = new Function(
+                                new FunctionInfo(new FunctionIdent(operator, dataTypes), order.valueType()), arguments);
+                        LuceneQueryBuilder.Context ctx = queryBuilder.convert(new WhereClause(function), searchContext, null);
+
+                        String columnName = ((Reference)order).info().ident().columnIdent().fqn();
+                        QueryBuilderHelper builderHelper = QueryBuilderHelper.forType(order.valueType());
+                        FilteredQuery isNullQuery = new FilteredQuery(
+                                Queries.newMatchAllQuery(),
+                                new NotFilter(builderHelper.rangeFilter(columnName, null, null, true, true)));
+
+                        BooleanQuery q = new BooleanQuery();
+                        q.add(ctx.query(), BooleanClause.Occur.SHOULD);
+                        q.add(isNullQuery, BooleanClause.Occur.SHOULD);
+                        q.setMinimumNumberShouldMatch(1);
+                        searchAfter.add(q, BooleanClause.Occur.MUST);
+                        i++;
+                    }
+                    topFieldDocs = (TopFieldDocs)searchContext.searcher().searchAfter(lastCollected, searchAfter, batchSize, sort);
+
+                    //topFieldDocs = (TopFieldDocs)searchContext.searcher().searchAfter(lastCollected, query, batchSize, sort);
+
                     collected += topFieldDocs.scoreDocs.length;
                     lastCollected = collectTopFields(topFieldDocs);
                 }

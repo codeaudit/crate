@@ -240,7 +240,8 @@ public class ShardCollectService {
                                     jobCollectContext,
                                     localContext,
                                     jobSearchContextId,
-                                    collectNode.keepContextForFetcher());
+                                    collectNode.keepContextForFetcher(),
+                                    luceneQueryBuilder);
                         } catch (Throwable t) {
                             if (localContext != null) {
                                 localContext.close();
