@@ -29,13 +29,14 @@ import io.crate.analyze.WhereClause;
 import io.crate.breaker.CrateCircuitBreakerService;
 import io.crate.breaker.RamAccountingContext;
 import io.crate.lucene.LuceneQueryBuilder;
-import io.crate.lucene.QueryBuilderHelper;
 import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.Functions;
 import io.crate.operation.*;
 import io.crate.operation.operator.GteOperator;
 import io.crate.operation.operator.LteOperator;
+import io.crate.operation.operator.OrOperator;
+import io.crate.operation.predicate.IsNullPredicate;
 import io.crate.operation.reference.doc.lucene.CollectorContext;
 import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
 import io.crate.operation.reference.doc.lucene.LuceneDocLevelReferenceResolver;
@@ -43,15 +44,13 @@ import io.crate.operation.reference.doc.lucene.OrderByCollectorExpression;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.symbol.Function;
 import io.crate.planner.symbol.Literal;
-import io.crate.planner.symbol.Reference;
 import io.crate.planner.symbol.Symbol;
 import io.crate.types.DataType;
+import io.crate.types.DataTypes;
 import org.apache.lucene.index.*;
 import org.apache.lucene.search.*;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
-import org.elasticsearch.common.lucene.search.NotFilter;
-import org.elasticsearch.common.lucene.search.Queries;
 import org.elasticsearch.index.fieldvisitor.FieldsVisitor;
 import org.elasticsearch.index.mapper.internal.SourceFieldMapper;
 
@@ -248,11 +247,12 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
 
                 while ((limit == null || collected < limit) && topFieldDocs.scoreDocs.length >= batchSize && lastCollected != null) {
                     batchSize = limit == null ? pageSize : Math.min(pageSize, limit - collected);
+
                     BooleanQuery searchAfter = new BooleanQuery();
                     searchAfter.add(query, BooleanClause.Occur.MUST);
 
-                    int i = 0;
-                    for (Symbol order : orderBy.orderBySymbols()) {
+                    for (int i = 0; i < orderBy.orderBySymbols().size(); i++) {
+                        Symbol order = orderBy.orderBySymbols().get(i);
                         List<DataType> dataTypes = Arrays.asList(order.valueType(), order.valueType());
                         Object value = ((FieldDoc)lastCollected).fields[i];
                         List<Symbol> arguments = Arrays.asList(order, Literal.newLiteral(order.valueType(), order.valueType().value(value)));
@@ -261,22 +261,22 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
                         if (orderBy.reverseFlags()[i]) {
                             operator = LteOperator.NAME;
                         }
-                        Function function = new Function(
+                        Function rangeQuery = new Function(
                                 new FunctionInfo(new FunctionIdent(operator, dataTypes), order.valueType()), arguments);
-                        LuceneQueryBuilder.Context ctx = queryBuilder.convert(new WhereClause(function), searchContext, null);
 
-                        String columnName = ((Reference)order).info().ident().columnIdent().fqn();
-                        QueryBuilderHelper builderHelper = QueryBuilderHelper.forType(order.valueType());
-                        FilteredQuery isNullQuery = new FilteredQuery(
-                                Queries.newMatchAllQuery(),
-                                new NotFilter(builderHelper.rangeFilter(columnName, null, null, true, true)));
+                        List<DataType> type = Arrays.asList(order.valueType());
+                        Function isNull = new Function(
+                                new FunctionInfo(new FunctionIdent(IsNullPredicate.NAME, type),
+                                        DataTypes.BOOLEAN,
+                                        FunctionInfo.Type.PREDICATE),
+                                Arrays.asList(order)
+                        );
+                        Function orQuery = new Function(
+                                OrOperator.INFO, Arrays.<Symbol>asList(rangeQuery, isNull)
+                        );
 
-                        BooleanQuery q = new BooleanQuery();
-                        q.add(ctx.query(), BooleanClause.Occur.SHOULD);
-                        q.add(isNullQuery, BooleanClause.Occur.SHOULD);
-                        q.setMinimumNumberShouldMatch(1);
-                        searchAfter.add(q, BooleanClause.Occur.MUST);
-                        i++;
+                        LuceneQueryBuilder.Context ctx = queryBuilder.convert(new WhereClause(orQuery), searchContext, null);
+                        searchAfter.add(ctx.query(), BooleanClause.Occur.MUST);
                     }
                     topFieldDocs = (TopFieldDocs)searchContext.searcher().searchAfter(lastCollected, searchAfter, batchSize, sort);
 

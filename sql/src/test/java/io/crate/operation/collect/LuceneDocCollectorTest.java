@@ -190,7 +190,7 @@ public class LuceneDocCollectorTest extends SQLTransportIntegrationTest {
     @Test
     public void testOrderedWithoutLimit() throws Exception {
         collectingProjector.rows.clear();
-        LuceneDocCollector docCollector = createDocCollector(orderBy, null, orderBy.orderBySymbols());
+        LuceneDocCollector docCollector = createDocCollector(orderBy, null, orderBy.orderBySymbols(), WhereClause.MATCH_ALL, 1);
         docCollector.doCollect(RAM_ACCOUNTING_CONTEXT);
         assertThat(collectingProjector.rows.size(), is(NUMBER_OF_DOCS));
         assertThat(((BytesRef)collectingProjector.rows.get(0)[0]).utf8ToString(), is("Austria") );
@@ -222,7 +222,7 @@ public class LuceneDocCollectorTest extends SQLTransportIntegrationTest {
         ReferenceIdent ident = new ReferenceIdent(new TableIdent("doc", "countries"), "countryName");
         Reference ref = new Reference(new ReferenceInfo(ident, RowGranularity.DOC, DataTypes.STRING));
         OrderBy orderBy = new OrderBy(ImmutableList.of((Symbol)ref), new boolean[]{true}, new Boolean[]{false});
-        LuceneDocCollector docCollector = createDocCollector(orderBy, null, orderBy.orderBySymbols());
+        LuceneDocCollector docCollector = createDocCollector(orderBy, null, orderBy.orderBySymbols(), WhereClause.MATCH_ALL, 1);
         docCollector.doCollect(RAM_ACCOUNTING_CONTEXT);
         assertThat(collectingProjector.rows.size(), is(NUMBER_OF_DOCS));
         assertThat(collectingProjector.rows.get(NUMBER_OF_DOCS - 1)[0], is(nullValue()));
@@ -239,7 +239,7 @@ public class LuceneDocCollectorTest extends SQLTransportIntegrationTest {
         ReferenceIdent ident = new ReferenceIdent(new TableIdent("doc", "countries"), "countryName");
         Reference ref = new Reference(new ReferenceInfo(ident, RowGranularity.DOC, DataTypes.STRING));
         OrderBy orderBy = new OrderBy(ImmutableList.of((Symbol)ref), new boolean[]{true}, new Boolean[]{true});
-        LuceneDocCollector docCollector = createDocCollector(orderBy, null, orderBy.orderBySymbols());
+        LuceneDocCollector docCollector = createDocCollector(orderBy, null, orderBy.orderBySymbols(), WhereClause.MATCH_ALL, 1);
         docCollector.doCollect(RAM_ACCOUNTING_CONTEXT);
         assertThat(collectingProjector.rows.size(), is(NUMBER_OF_DOCS));
         assertThat(collectingProjector.rows.get(0)[0], is(nullValue()));
