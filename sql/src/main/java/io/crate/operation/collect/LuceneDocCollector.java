@@ -35,8 +35,6 @@ import io.crate.metadata.Functions;
 import io.crate.operation.*;
 import io.crate.operation.operator.GteOperator;
 import io.crate.operation.operator.LteOperator;
-import io.crate.operation.operator.OrOperator;
-import io.crate.operation.predicate.IsNullPredicate;
 import io.crate.operation.reference.doc.lucene.CollectorContext;
 import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
 import io.crate.operation.reference.doc.lucene.LuceneDocLevelReferenceResolver;
@@ -46,7 +44,6 @@ import io.crate.planner.symbol.Function;
 import io.crate.planner.symbol.Literal;
 import io.crate.planner.symbol.Symbol;
 import io.crate.types.DataType;
-import io.crate.types.DataTypes;
 import org.apache.lucene.index.*;
 import org.apache.lucene.search.*;
 import org.elasticsearch.common.logging.ESLogger;
@@ -120,10 +117,7 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
     private int rowCount = 0;
     private int pageSize;
 
-    private final Functions functions;
     private final LuceneQueryBuilder queryBuilder;
-
-    private AtomicReaderContext readerContext;
 
     public LuceneDocCollector(List<Input<?>> inputs,
                               List<LuceneCollectorExpression<?>> collectorExpressions,
@@ -152,7 +146,6 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
         this.keepContextForFetcher = keepContextForFetcher;
         inputSymbolVisitor = new CollectInputSymbolVisitor<>(functions, new LuceneDocLevelReferenceResolver(null));
         this.pageSize = Constants.PAGE_SIZE;
-        this.functions = functions;
         this.queryBuilder = queryBuilder;
     }
 
@@ -197,7 +190,6 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
 
     @Override
     public void setNextReader(AtomicReaderContext context) throws IOException {
-        //readerContext = context;
         this.currentReader = context.reader();
         for (LuceneCollectorExpression expr : collectorExpressions) {
             expr.setNextReader(context);
@@ -237,6 +229,33 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
         boolean failed = false;
         try {
             if( orderBy != null) {
+
+                List<Function> orderByQueries = new ArrayList<>(orderBy.orderBySymbols().size());
+                for (int i = 0; i < orderBy.orderBySymbols().size(); i++) {
+                    Symbol order = orderBy.orderBySymbols().get(i);
+                    List<DataType> dataTypes = Arrays.asList(order.valueType(), order.valueType());
+                    List<Symbol> arguments = Arrays.asList(order, Literal.newLiteral(order.valueType(), null));
+
+                    String operator = GteOperator.NAME;
+                    if (orderBy.reverseFlags()[i]) {
+                        operator = LteOperator.NAME;
+                    }
+                    Function rangeQuery = new Function(
+                            new FunctionInfo(new FunctionIdent(operator, dataTypes), order.valueType()), arguments);
+                   /* List<DataType> type = Arrays.asList(order.valueType());
+                    Function isNull = new Function(
+                            new FunctionInfo(new FunctionIdent(IsNullPredicate.NAME, type),
+                                    DataTypes.BOOLEAN,
+                                    FunctionInfo.Type.PREDICATE),
+                            Arrays.asList(order)
+                    );
+                    Function orQuery = new Function(
+                            OrOperator.INFO, Arrays.<Symbol>asList(rangeQuery, isNull)
+                    );*/
+                    orderByQueries.add(rangeQuery);
+                }
+
+
                 Integer batchSize = limit == null ? pageSize : Math.min(pageSize, limit);
                 Sort sort = CrateSearchService.generateLuceneSort(searchContext, orderBy, inputSymbolVisitor);
 
@@ -247,34 +266,13 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
 
                 while ((limit == null || collected < limit) && topFieldDocs.scoreDocs.length >= batchSize && lastCollected != null) {
                     batchSize = limit == null ? pageSize : Math.min(pageSize, limit - collected);
-
                     BooleanQuery searchAfter = new BooleanQuery();
                     searchAfter.add(query, BooleanClause.Occur.MUST);
-
                     for (int i = 0; i < orderBy.orderBySymbols().size(); i++) {
                         Symbol order = orderBy.orderBySymbols().get(i);
-                        List<DataType> dataTypes = Arrays.asList(order.valueType(), order.valueType());
                         Object value = ((FieldDoc)lastCollected).fields[i];
-                        List<Symbol> arguments = Arrays.asList(order, Literal.newLiteral(order.valueType(), order.valueType().value(value)));
-
-                        String operator = GteOperator.NAME;
-                        if (orderBy.reverseFlags()[i]) {
-                            operator = LteOperator.NAME;
-                        }
-                        Function rangeQuery = new Function(
-                                new FunctionInfo(new FunctionIdent(operator, dataTypes), order.valueType()), arguments);
-
-                        List<DataType> type = Arrays.asList(order.valueType());
-                        Function isNull = new Function(
-                                new FunctionInfo(new FunctionIdent(IsNullPredicate.NAME, type),
-                                        DataTypes.BOOLEAN,
-                                        FunctionInfo.Type.PREDICATE),
-                                Arrays.asList(order)
-                        );
-                        Function orQuery = new Function(
-                                OrOperator.INFO, Arrays.<Symbol>asList(rangeQuery, isNull)
-                        );
-
+                        Function orQuery = orderByQueries.get(i);
+                        orQuery.arguments().set(1, Literal.newLiteral(order.valueType(), order.valueType().value(value)));
                         LuceneQueryBuilder.Context ctx = queryBuilder.convert(new WhereClause(orQuery), searchContext, null);
                         searchAfter.add(ctx.query(), BooleanClause.Occur.MUST);
                     }
